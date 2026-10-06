@@ -1,48 +1,13 @@
-import nodemailer from "nodemailer";
+import { Resend } from "resend";
 
 export async function sendContactEmail({ name, email, message }) {
-  const {
-    SMTP_HOST,
-    SMTP_PORT,
-    SMTP_SECURE,
-    SMTP_USER,
-    SMTP_PASS,
-    CONTACT_TO_EMAIL,
-    CONTACT_FROM_EMAIL,
-  } = process.env;
+  const { RESEND_API_KEY, CONTACT_TO_EMAIL } = process.env;
 
-  const required = {
-    SMTP_HOST,
-    SMTP_PORT,
-    SMTP_USER,
-    SMTP_PASS,
-    CONTACT_TO_EMAIL,
-    CONTACT_FROM_EMAIL,
-  };
-
-  const missing = Object.entries(required)
-    .filter(([, value]) => !value)
-    .map(([key]) => key);
-
-  if (missing.length > 0) {
-    throw new Error("Email service is not configured.");
+  if (!RESEND_API_KEY || !CONTACT_TO_EMAIL) {
+    throw new Error("Resend email service is not configured.");
   }
 
-  const port = Number(SMTP_PORT);
-
-  if (!Number.isInteger(port) || port < 1 || port > 65535) {
-    throw new Error("Invalid SMTP configuration.");
-  }
-
-  const transporter = nodemailer.createTransport({
-    host: SMTP_HOST,
-    port,
-    secure: SMTP_SECURE === "true",
-    auth: {
-      user: SMTP_USER,
-      pass: SMTP_PASS,
-    },
-  });
+  const resend = new Resend(RESEND_API_KEY);
 
   const escapeHtml = (value) =>
     value.replace(/[&<>"']/g, (character) => {
@@ -57,11 +22,12 @@ export async function sendContactEmail({ name, email, message }) {
       return entities[character];
     });
 
-  await transporter.sendMail({
-    from: CONTACT_FROM_EMAIL,
-    to: CONTACT_TO_EMAIL,
+  const { data, error } = await resend.emails.send({
+    from: "Portfolio <onboarding@resend.dev>",
+    to: [CONTACT_TO_EMAIL],
     replyTo: email,
     subject: "New portfolio contact message",
+
     text: [
       `Name: ${name}`,
       `Email: ${email}`,
@@ -69,12 +35,31 @@ export async function sendContactEmail({ name, email, message }) {
       "Message:",
       message,
     ].join("\n"),
+
     html: `
       <h2>New portfolio contact message</h2>
-      <p><strong>Name:</strong> ${escapeHtml(name)}</p>
-      <p><strong>Email:</strong> ${escapeHtml(email)}</p>
-      <p><strong>Message:</strong></p>
-      <p>${escapeHtml(message).replace(/\r?\n/g, "<br>")}</p>
+
+      <p>
+        <strong>Name:</strong> ${escapeHtml(name)}
+      </p>
+
+      <p>
+        <strong>Email:</strong> ${escapeHtml(email)}
+      </p>
+
+      <p>
+        <strong>Message:</strong>
+      </p>
+
+      <p>
+        ${escapeHtml(message).replace(/\r?\n/g, "<br>")}
+      </p>
     `,
   });
+
+  if (error) {
+    throw new Error(error.message || "Failed to send email.");
+  }
+
+  console.log("✅ Contact email sent:", data?.id);
 }
